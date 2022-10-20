@@ -1,14 +1,45 @@
 #include "mbed.h"
-#include "LightCompensator.h"
+#include "Photoresistor.h"
+#include "Grove_LCD_RGB_Backlight.h"
 
 int main()
 {
-    LightCompensator lightcompensator(A0, A3);
+    Photoresistor photoresistor(A0);
+    AnalogIn potenciometer(A1);
+    Grove_LCD_RGB_Backlight screen(D14, D15);
     while (true) {
-        printf("%f\n", lightcompensator.read_lux());
-        lightcompensator.ledOn();
-        ThisThread::sleep_for(1s);
-        lightcompensator.ledOff();
+        float lux_percent = photoresistor.read_percent();
+        float pot_percent = potenciometer.read();
+        printf("Lux: %f%%, Pot: %f%%\n", lux_percent * 100, pot_percent * 100);
+
+        float lux_compensated_percent;
+        if (lux_percent < pot_percent)
+        {
+            lux_compensated_percent = pot_percent - lux_percent;
+        }
+
+        char lux_str[16] = "lux: ";
+        char lux_percent_str[16];
+        sprintf(lux_percent_str, "%.6f", lux_percent * 100);
+        strcat(lux_str, lux_percent_str);
+
+        char com_str[16] = "com: ";
+        char com_percent_str[16];
+        sprintf(com_percent_str, "%.6f", lux_compensated_percent * 100);
+        strcat(com_str, com_percent_str);
+        
+        screen.clear();
+        screen.locate(0, 0);
+        screen.print(lux_str);
+        screen.locate(15, 0);
+        char unit_str[] = "%";
+        screen.print(unit_str);
+
+        screen.locate(0, 1);
+        screen.print(com_str);
+        screen.locate(15, 1);
+        screen.print(unit_str);
+
         ThisThread::sleep_for(1s);
     }
 }
