@@ -100,8 +100,8 @@ void start_lux_mean(){
     lux_sum = 0.0;
     n_lux_reads = 0;
     timer = Kernel::get_ms_count();
-    calculate_lux_mean();
     calculant_mitjana = true;
+    calculate_lux_mean();
 }
 
 
@@ -120,6 +120,7 @@ void button_interrupt()
 bool comprovar_sobrecarrega(){
     if (DEADLINE < (start - Kernel::get_ms_count())) {
         buzzer.write(0.25);
+        ThisThread::sleep_for(200ms);   //Si sobrecarrega pitar 200ms
         return true;
     }
     return false;
@@ -151,8 +152,6 @@ int main()
                     ThisThread::sleep_for(time_remaining);
                 }
             }
-        } else {
-            ThisThread::sleep_for(500ms);   //Si sobrecarrega pitar 500ms
         }
         buzzer.write(0.0);
     }
