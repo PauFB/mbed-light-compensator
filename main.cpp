@@ -7,6 +7,9 @@
 
 #define DEADLINE 500
 
+// read_compensate_lux: 52 ms
+// display: 12 ms
+
 Photoresistor photoresistor(A0);
 AnalogIn potenciometer(A1);
 PwmOut led(D3);
@@ -88,7 +91,19 @@ void calculate_lux_mean()
     lux_sum += lux_percent;
     n_lux_reads++;
     if ((Kernel::get_ms_count() - timer) >= 10000) {
-        printf("Mitjana dels ultims 10 segons: %f", lux_percent/n_lux_reads);
+        printf("Mitjana dels ultims 10 segons: %f\n", lux_percent/n_lux_reads);
+
+        screen.clear();
+        screen.locate(0, 0);
+        char str[] = "Mitjana (10 seg)";
+        screen.print(str);
+        screen.locate(0, 1);
+        sprintf(str, "%.6f", lux_percent/n_lux_reads);
+        screen.print(str);
+        screen.locate(15, 1);
+        char unit_str[] = "%";
+        screen.print(unit_str);
+
         calculant_mitjana = false;
         button.enable_irq();
     }
@@ -108,9 +123,9 @@ void start_lux_mean(){
 void button_interrupt()
 {
     // Si estem en el budget executar
-    if ((start - Kernel::get_ms_count()) >= 100) {  //100 seria temps de read_compensate_lux + display
+    if ((Kernel::get_ms_count() - start) >= 65) {  //100 seria temps de read_compensate_lux + display
         start_lux_mean();
-    // Sino encuar
+    // Si no encuar
     } else {
         n_interrupts++;
     }
@@ -118,7 +133,7 @@ void button_interrupt()
 
 
 bool comprovar_sobrecarrega(){
-    if (DEADLINE < (start - Kernel::get_ms_count())) {
+    if (DEADLINE < (Kernel::get_ms_count() - start)) {
         buzzer.write(0.25);
         ThisThread::sleep_for(200ms);   //Si sobrecarrega pitar 200ms
         return true;
