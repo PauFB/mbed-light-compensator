@@ -5,7 +5,9 @@
 #include <cstdio>
 #include <ratio>
 
-#define DEADLINE 500
+#define PERIOD_MS 500
+#define DEADLINE_READ_COMPENSATE_LUX_MS 52
+#define DEADLINE_DISPLAY 12
 
 // read_compensate_lux: 52 ms
 // display: 12 ms
@@ -23,15 +25,14 @@ float pot_percent = 0.0;
 float lux_compensated_percent = 0.0;
 float lux_sum = 0.0;
 int n_lux_reads = 0;
-uint64_t start;
-uint64_t timer;
+uint64_t start_read_compensate_lux_ms, start_display_ms;
+uint64_t start_button_interrupt_ms;
 int n_interrupts = 0;
 bool calculant_mitjana = false;
 
 
 void read_compensate_lux()
 {
-    uint64_t start1 = Kernel::get_ms_count();
     lux_percent = photoresistor.read_percent();
     if (lux_percent < 0.0) {
         buzzer.write(0.25);
@@ -42,7 +43,6 @@ void read_compensate_lux()
         buzzer.write(0.25);
         pot_percent = 0.0;
     }
-
     if (lux_percent <= pot_percent)
         lux_compensated_percent = pot_percent - lux_percent;
     else
@@ -51,15 +51,11 @@ void read_compensate_lux()
     led.write(lux_compensated_percent);
 
     printf("Lux: %f%%, Pot: %f%%, Com: %f%%\n", lux_percent * 100, pot_percent * 100, lux_compensated_percent * 100);
-
-    uint64_t end1 = Kernel::get_ms_count();
-    printf("read_compensate_lux tarda %llu ms\n", end1 - start1);
 }
 
 
 void display()
 {
-    uint64_t start2 = Kernel::get_ms_count();
     char lux_str[16] = "lux: ";
     char lux_percent_str[16];
     sprintf(lux_percent_str, "%.6f", lux_percent * 100);
@@ -81,8 +77,6 @@ void display()
     screen.print(com_str);
     screen.locate(15, 1);
     screen.print(unit_str);
-    uint64_t end2 = Kernel::get_ms_count();
-    printf("display tarda %llu ms\n", end2 - start2);
 }
 
 
@@ -90,19 +84,20 @@ void calculate_lux_mean()
 {
     lux_sum += lux_percent;
     n_lux_reads++;
-    if ((Kernel::get_ms_count() - timer) >= 10000) {
-        printf("Mitjana dels ultims 10 segons: %f\n", lux_percent/n_lux_reads);
-
+    if ((Kernel::get_ms_count() - start_button_interrupt_ms) >= 10000) {
+        printf("Mitjana dels ultims 10 segons: %f\n", lux_sum / n_lux_reads);
         screen.clear();
         screen.locate(0, 0);
         char str[] = "Mitjana (10 seg)";
         screen.print(str);
         screen.locate(0, 1);
-        sprintf(str, "%.6f", lux_percent/n_lux_reads);
+        sprintf(str, "%.6f", lux_sum / n_lux_reads);
         screen.print(str);
         screen.locate(15, 1);
         char unit_str[] = "%";
         screen.print(unit_str);
+
+        ThisThread::sleep_for(2000ms);
 
         calculant_mitjana = false;
         button.enable_irq();
@@ -114,7 +109,7 @@ void start_lux_mean(){
     button.disable_irq();
     lux_sum = 0.0;
     n_lux_reads = 0;
-    timer = Kernel::get_ms_count();
+    start_button_interrupt_ms = Kernel::get_ms_count();
     calculant_mitjana = true;
     calculate_lux_mean();
 }
@@ -123,7 +118,7 @@ void start_lux_mean(){
 void button_interrupt()
 {
     // Si estem en el budget executar
-    if ((Kernel::get_ms_count() - start) >= 65) {  //100 seria temps de read_compensate_lux + display
+    if ((Kernel::get_ms_count() - start_read_compensate_lux_ms) >= 65) {  // 100 seria temps de read_compensate_lux + display
         start_lux_mean();
     // Si no encuar
     } else {
@@ -131,11 +126,19 @@ void button_interrupt()
     }
 }
 
-
-bool comprovar_sobrecarrega(){
-    if (DEADLINE < (Kernel::get_ms_count() - start)) {
+bool comprovar_read_compensate_lux() {
+    if (DEADLINE_READ_COMPENSATE_LUX_MS < (Kernel::get_ms_count() - start_read_compensate_lux_ms)) {
         buzzer.write(0.25);
-        ThisThread::sleep_for(200ms);   //Si sobrecarrega pitar 200ms
+        ThisThread::sleep_for(200ms);   // Si sobrecarrega pitar 200ms
+        return true;
+    }
+    return false;
+}
+
+bool comprovar_display() {
+    if (DEADLINE_DISPLAY < (Kernel::get_ms_count() - start_display_ms)) {
+        buzzer.write(0.25);
+        ThisThread::sleep_for(200ms);   // Si sobrecarrega pitar 200ms
         return true;
     }
     return false;
@@ -149,21 +152,22 @@ int main()
     button.rise(&button_interrupt);
 
     while (true) {
-        start = Kernel::get_ms_count();
-
+        start_read_compensate_lux_ms = Kernel::get_ms_count();
         read_compensate_lux();
-        if (!comprovar_sobrecarrega()){
-
+        printf("read_compensate_lux tarda %llu ms\n", Kernel::get_ms_count() - start_read_compensate_lux_ms);
+        if (!comprovar_read_compensate_lux()) {
+            start_display_ms = Kernel::get_ms_count();
             display();
-            if (!comprovar_sobrecarrega()){
-
+            printf("display tarda %llu ms\n", Kernel::get_ms_count() - start_display_ms);
+            if (!comprovar_display()) {
                 if (n_interrupts > 0){
                     start_lux_mean();
+                    n_interrupts--;
                 } else if (calculant_mitjana) {
                     calculate_lux_mean();
                 }
-                if (!comprovar_sobrecarrega()){
-                    uint64_t time_remaining = DEADLINE - (start - Kernel::get_ms_count());
+                if ((Kernel::get_ms_count() - start_read_compensate_lux_ms) <= PERIOD_MS) {
+                    uint64_t time_remaining = PERIOD_MS - (Kernel::get_ms_count() - start_read_compensate_lux_ms);
                     ThisThread::sleep_for(time_remaining);
                 }
             }
