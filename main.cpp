@@ -7,7 +7,7 @@
 #include <string>
 
 #define PERIOD_MS 500
-#define DEADLINE_READ_COMPENSATE_LUX_MS 52
+#define DEADLINE_READ_COMPENSATE_LUX_MS 1
 #define DEADLINE_DISPLAY 12
 
 #define ID_START_LUX_MEAN 0
@@ -111,7 +111,7 @@ void display_mean()
 void mean_interrupt()
 {
     // Si estem en el budget executar
-    if ((Kernel::get_ms_count() - start_read_compensate_lux_ms) >= 65) {
+    if ((Kernel::get_ms_count() - start_read_compensate_lux_ms) > (DEADLINE_READ_COMPENSATE_LUX_MS + DEADLINE_DISPLAY)) {
         display_mean();
     // Si no encuar
     } else {
@@ -134,7 +134,7 @@ void start_lux_mean(){
 void button_interrupt()
 {
     // Si estem en el budget executar
-    if ((Kernel::get_ms_count() - start_read_compensate_lux_ms) >= 65) {
+    if ((Kernel::get_ms_count() - start_read_compensate_lux_ms) > (DEADLINE_READ_COMPENSATE_LUX_MS + DEADLINE_DISPLAY)) {
         Thread *newThread = new Thread(osPriorityBelowNormal, 1024, NULL, NULL);
         newThread->start(callback(start_lux_mean));
     // Si no encuar
